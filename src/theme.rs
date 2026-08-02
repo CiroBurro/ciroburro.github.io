@@ -49,13 +49,18 @@ pub fn CardSlot(
     }
 }
 
-/// Health bar with fill.
+/// Health bar with dynamic fill (0.0 - 100.0 percent).
 #[component]
-pub fn HpBar(percent: &'static str) -> impl IntoView {
-    let style = format!("width: {percent};");
+pub fn HpBar(percent: Signal<f64>) -> impl IntoView {
     view! {
-        <div class="hp-bar" role="progressbar" aria-valuenow=100 aria-valuemin=0 aria-valuemax=100>
-            <div class="hp-fill" style=style></div>
+        <div
+            class="hp-bar"
+            role="progressbar"
+            aria-valuenow=move || percent.get().round() as i32
+            aria-valuemin=0
+            aria-valuemax=100
+        >
+            <div class="hp-fill" style=move || format!("width: {}%;", percent.get().clamp(0.0, 100.0))></div>
         </div>
     }
 }

@@ -6,3 +6,9 @@ edition = "2024"
 [dependencies]
 leptos = { version = "0.8.20", features = ["csr"] }
 leptos_router = "0.8.15"
+rand = "0.10.2"
+
+# getrandom serve a rand per l'entropia; su wasm32-unknown-unknown serve
+# il backend JS esplicito, altrimenti la build fallisce.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
