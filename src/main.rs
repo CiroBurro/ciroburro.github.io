@@ -86,7 +86,7 @@ fn NotFound() -> impl IntoView {
             <p class="mt-2 text-parchment-300">
                 "This room doesn't exist. Best to retrace your steps before the goblins find you."
             </p>
-            <a href="" class="btn btn-gold mt-8 inline-block">"Back to the light"</a>
+            <a href="https://ciroburro.github.io/" class="btn btn-gold mt-8 inline-block">"Back to the light"</a>
         </div>
     }
 }
