@@ -311,7 +311,7 @@ fn Rules() -> impl IntoView {
                 <RuleCard
                     icon="1"
                     title="Draw"
-                    text="Each turn you draw 5 cards from the deck: one goes to the armory, the other four to the room. Resolve three, then leave one behind for the next room."
+                    text="Each turn you draw 4 cards from the deck to the current room: resolve three, then leave one behind for the next room."
                 />
                 <RuleCard
                     icon="2"
