@@ -108,7 +108,30 @@ impl GameState {
         }
 
         self.remove_card(card);
+
+        // Se non restano mostri né carte utilizzabili (armi, o pozioni se
+        // non ne hai già bevuta una), la stanza è esaurita: avanzamento
+        // automatico. Questo copre anche le stanze senza mostri.
+        if !self.has_monsters() && !self.has_usable_cards() {
+            self.maybe_advance();
+        }
+
         Ok(())
+    }
+
+    /// C'è almeno un mostro nella stanza?
+    fn has_monsters(&self) -> bool {
+        self.current_room
+            .iter()
+            .any(|c| c.is_some_and(|c| c.is_monster()))
+    }
+
+    /// Resta qualche carta utilizzabile? Un'arma è sempre equipaggiabile;
+    /// una pozione solo se non ne hai già bevuta una nella stanza.
+    fn has_usable_cards(&self) -> bool {
+        self.current_room.iter().any(|c| {
+            c.is_some_and(|c| c.is_weapon() || (c.is_potion() && !self.have_healed))
+        })
     }
 
     /// Fuga: le 4 carte visibili tornano nel mazzo (rimischiato) e
@@ -131,60 +154,85 @@ impl GameState {
         Ok(())
     }
 
-    /// Attacca un mostro (♠♣). Senza arma subisci il danno pieno;
-    /// con un'arma il danno è ridotto del valore dell'arma (minimo 0) e
-    /// l'arma si lega all'ultimo mostro ucciso (weapon binding).
-    pub fn attack(&mut self, card: Card) -> Result<(), String> {
+    /// Attacca un mostro (♠♣).
+    ///
+    /// - `barehanded == false`: usa l'arma equipaggiata (se presente), applicando
+    ///   il weapon binding; senza arma subisci il danno pieno.
+    /// - `barehanded == true`: combatti a mani nude anche con un'arma equipaggiata
+    ///   (danno pieno, l'arma resta e il suo legame non cambia). È l'opzione
+    ///   ufficiale per fronteggiare mostri più forti dell'ultimo sconfitto.
+    ///
+    /// Dopo il colpo la stanza può avanzare automaticamente (vedi `maybe_advance`).
+    pub fn attack(&mut self, card: Card, barehanded: bool) -> Result<(), String> {
         if !card.is_monster() {
             return Err("The selected card is not a monster".to_string());
         }
 
-        let damage = match self.weapon {
-            Some(weapon) => {
-                if let Some(last) = weapon.last_monster_value {
-                    if card.value > last {
-                        return Err(
-                            "Your weapon is bound: it can only fight monsters of equal or lower \
-                             strength than the last one it defeated"
-                                .to_string(),
-                        );
+        let damage = if barehanded {
+            card.value
+        } else {
+            match self.weapon {
+                Some(weapon) => {
+                    if let Some(last) = weapon.last_monster_value {
+                        if card.value > last {
+                            return Err(
+                                "Your weapon is bound: it can only fight monsters of equal or lower \
+                                 strength than the last one it defeated. Fight barehanded instead."
+                                    .to_string(),
+                            );
+                        }
                     }
+                    card.value.saturating_sub(weapon.value)
                 }
-                card.value.saturating_sub(weapon.value)
+                None => card.value,
             }
-            None => card.value,
         };
 
         self.hp -= damage as i8;
 
-        if let Some(weapon) = self.weapon.as_mut() {
-            weapon.last_monster_value = Some(card.value);
+        if !barehanded {
+            if let Some(weapon) = self.weapon.as_mut() {
+                weapon.last_monster_value = Some(card.value);
+            }
         }
 
         self.remove_card(card);
+        self.maybe_advance();
         Ok(())
     }
 
-    /// Nuovo turno: si può iniziare solo quando nella stanza è rimasta
-    /// una sola carta; pesca 3 nuove carte per riportarla a 4.
-    pub fn new_turn(&mut self) -> Result<(), String> {
-        let empty = self.current_room.iter().filter(|c| c.is_none()).count();
-        if empty != ROOM_SIZE - 1 {
-            return Err(
-                "You can start a new turn only when a single card is left in the room".to_string(),
-            );
-        }
+    /// Avanza automaticamente la stanza dopo un'azione che rimuove una carta:
+    ///
+    /// 1. **Completamento**: se nella stanza non è rimasto alcun mostro, le carte
+    ///    residue (pozioso/armi inutilizzate) vengono scartate e si pesca una
+    ///    nuova stanza completa. Elimina il deadlock di una stanza composta solo
+    ///    da pozioni e un mostro.
+    /// 2. **Nuovo turno**: altrimenti, quando è rimasta una sola carta (mostro o
+    ///    no), si pescano 3 nuove carte, lasciando quella "passata avanti".
+    ///
+    /// In entrambi i casi si azzerano i flag di fuga/pozione e si incrementa il turno.
+    fn maybe_advance(&mut self) {
+        let has_monster = self
+            .current_room
+            .iter()
+            .any(|c| c.is_some_and(|c| c.is_monster()));
 
-        for slot in self.current_room.iter_mut() {
-            if slot.is_none() {
-                *slot = self.dungeon_deck.pop();
+        if !has_monster {
+            self.current_room = [None; ROOM_SIZE];
+            self.draw_room();
+        } else if self.current_room.iter().filter(|c| c.is_some()).count() == 1 {
+            for slot in self.current_room.iter_mut() {
+                if slot.is_none() {
+                    *slot = self.dungeon_deck.pop();
+                }
             }
+        } else {
+            return;
         }
 
         self.turn += 1;
         self.last_action_was_avoid = false;
         self.have_healed = false;
-        Ok(())
     }
 
     /// Pesa una stanza completa di 4 carte.
@@ -229,6 +277,19 @@ impl GameState {
 mod tests {
     use super::*;
 
+    /// Costruisce una stanza di ROOM_SIZE a partire da una lista di carte.
+    fn room_with(cards: &[Option<Card>]) -> [Option<Card>; ROOM_SIZE] {
+        let mut r = [None; ROOM_SIZE];
+        for (i, c) in cards.iter().enumerate().take(ROOM_SIZE) {
+            r[i] = *c;
+        }
+        r
+    }
+
+    fn monster(v: u8) -> Card {
+        Card::new(Suit::Spades, v)
+    }
+
     #[test]
     fn deck_is_44_cards_and_room_is_dealt() {
         let state = GameState::new();
@@ -243,18 +304,24 @@ mod tests {
     #[test]
     fn barehanded_attack_deals_full_damage() {
         let mut state = GameState::new();
-        state.current_room = [Some(Card::new(Suit::Spades, 7)), None, None, None];
-        state.attack(Card::new(Suit::Spades, 7)).unwrap();
+        // Due mostri: dopo il primo colpo la stanza non avanza subito (resta un mostro)
+        state.current_room =
+            room_with(&[Some(monster(7)), Some(monster(3)), None, None]);
+        state.attack(monster(7), false).unwrap();
         assert_eq!(state.hp, MAX_HP - 7);
-        assert!(state.current_room[0].is_none());
+        assert!(
+            state.current_room.iter().all(|c| *c != Some(monster(7))),
+            "il mostro ucciso deve sparire dalla stanza"
+        );
     }
 
     #[test]
     fn weapon_reduces_damage() {
         let mut state = GameState::new();
         state.weapon = Some(Weapon::new(4));
-        state.current_room = [Some(Card::new(Suit::Clubs, 12)), None, None, None];
-        state.attack(Card::new(Suit::Clubs, 12)).unwrap();
+        state.current_room =
+            room_with(&[Some(monster(12)), Some(monster(6)), None, None]);
+        state.attack(monster(12), false).unwrap();
         assert_eq!(state.hp, MAX_HP - 8); // 12 - 4
     }
 
@@ -262,37 +329,57 @@ mod tests {
     fn weapon_binds_to_last_monster() {
         let mut state = GameState::new();
         state.weapon = Some(Weapon::new(10));
-        state.current_room = [Some(Card::new(Suit::Clubs, 13)), None, None, None];
-        state.attack(Card::new(Suit::Clubs, 13)).unwrap();
+        state.current_room =
+            room_with(&[Some(monster(13)), Some(monster(10)), None, None]);
+        state.attack(monster(13), false).unwrap();
         assert_eq!(state.weapon.unwrap().last_monster_value, Some(13));
 
-        // Legata a 13: puoi ancora attaccare un 10...
-        state.current_room = [Some(Card::new(Suit::Spades, 10)), None, None, None];
-        state.attack(Card::new(Suit::Spades, 10)).unwrap();
-        // ...ma un Ace (14) no.
-        state.current_room = [Some(Card::new(Suit::Spades, 14)), None, None, None];
-        assert!(state.attack(Card::new(Suit::Spades, 14)).is_err());
+        // Legata a 13: puoi ancora attaccare un 10 (≤ 13)
+        state.attack(monster(10), false).unwrap();
+        assert_eq!(state.weapon.unwrap().last_monster_value, Some(10));
+    }
+
+    #[test]
+    fn bound_weapon_blocks_stronger_monster_but_barehanded_works() {
+        let mut state = GameState::new();
+        state.weapon = Some(Weapon {
+            value: 10,
+            last_monster_value: Some(3),
+        });
+        state.current_room =
+            room_with(&[Some(monster(14)), Some(monster(3)), None, None]);
+
+        // Con l'arma legata a 3 non puoi colpire un 14...
+        assert!(state.attack(monster(14), false).is_err());
+
+        // ... ma puoi combatterlo a mani nude (danno pieno), l'arma resta.
+        state.attack(monster(14), true).unwrap();
+        assert_eq!(state.hp, MAX_HP - 14);
+        assert_eq!(state.weapon.unwrap().last_monster_value, Some(3));
     }
 
     #[test]
     fn cannot_attack_red_cards() {
         let mut state = GameState::new();
-        state.current_room = [Some(Card::new(Suit::Hearts, 5)), None, None, None];
-        assert!(state.attack(Card::new(Suit::Hearts, 5)).is_err());
+        state.current_room =
+            room_with(&[Some(Card::new(Suit::Hearts, 5)), Some(monster(4)), None, None]);
+        assert!(state.attack(Card::new(Suit::Hearts, 5), true).is_err());
     }
 
     #[test]
     fn potion_heals_and_caps_at_max_hp() {
         let mut state = GameState::new();
         state.hp = 10;
-        state.current_room = [Some(Card::new(Suit::Hearts, 8)), None, None, None];
+        state.current_room =
+            room_with(&[Some(Card::new(Suit::Hearts, 8)), Some(monster(3)), None, None]);
         state.equip(Card::new(Suit::Hearts, 8)).unwrap();
         assert_eq!(state.hp, 18);
 
-        // nuova stanza: il limite "una pozione per stanza" si azzera
+        // nuova stanza (qui simulata): il limite "una pozione per stanza" si azzera
         state.have_healed = false;
         state.hp = 19;
-        state.current_room = [Some(Card::new(Suit::Hearts, 8)), None, None, None];
+        state.current_room =
+            room_with(&[Some(Card::new(Suit::Hearts, 8)), Some(monster(3)), None, None]);
         state.equip(Card::new(Suit::Hearts, 8)).unwrap();
         assert_eq!(state.hp, MAX_HP);
     }
@@ -301,7 +388,7 @@ mod tests {
     fn only_one_potion_per_room() {
         let mut state = GameState::new();
         state.have_healed = true;
-        state.current_room = [Some(Card::new(Suit::Hearts, 4)), None, None, None];
+        state.current_room = room_with(&[Some(Card::new(Suit::Hearts, 4)), Some(monster(3)), None, None]);
         assert!(state.equip(Card::new(Suit::Hearts, 4)).is_err());
     }
 
@@ -310,7 +397,7 @@ mod tests {
         let mut state = GameState::new();
         let deck_before = state.dungeon_deck.len();
         state.flee().unwrap();
-        // le 4 carte sono tornate nel mazzo e ne sono state pescate 4 nuove
+        // le 4 carte + 4 nuove pescate: il mazzo torna alla stessa dimensione
         assert_eq!(state.dungeon_deck.len(), deck_before);
         assert_eq!(
             state.current_room.iter().filter(|c| c.is_some()).count(),
@@ -321,11 +408,59 @@ mod tests {
     }
 
     #[test]
-    fn flee_stays_blocked_until_room_completed() {
+    fn room_completes_when_last_monster_dies() {
+        let mut state = GameState::new();
+        state.current_room = room_with(&[
+            Some(Card::new(Suit::Hearts, 5)),
+            Some(Card::new(Suit::Hearts, 6)),
+            Some(Card::new(Suit::Hearts, 7)),
+            Some(monster(4)),
+        ]);
+        let deck_before = state.dungeon_deck.len();
+
+        state.equip(Card::new(Suit::Hearts, 5)).unwrap(); // bevi 1 pozione
+        state.attack(monster(4), false).unwrap(); // ultimo mostro muore
+
+        // Completamento automatico: le pozzi residue sono scartate,
+        // ne vengono pescate 4 nuove, flag azzerati e turn incrementato.
+        assert_eq!(
+            state.current_room.iter().filter(|c| c.is_some()).count(),
+            4
+        );
+        assert_eq!(state.dungeon_deck.len(), deck_before - 4);
+        assert_eq!(state.turn, 2);
+        assert!(!state.have_healed);
+        assert!(!state.last_action_was_avoid);
+    }
+
+    #[test]
+    fn auto_advance_when_single_card_left() {
+        let mut state = GameState::new();
+        let deck_before = state.dungeon_deck.len();
+        state.current_room = room_with(&[
+            Some(monster(2)),
+            Some(monster(3)),
+            Some(Card::new(Suit::Diamonds, 4)),
+            None,
+        ]);
+
+        state.equip(Card::new(Suit::Diamonds, 4)).unwrap(); // resta 2 mostri
+        state.attack(monster(2), false).unwrap(); // resta 1 mostro -> auto new turn
+
+        assert_eq!(
+            state.current_room.iter().filter(|c| c.is_some()).count(),
+            4
+        );
+        assert_eq!(state.dungeon_deck.len(), deck_before - 3); // 3 nuove pescate
+        assert_eq!(state.turn, 2);
+    }
+
+    #[test]
+    fn flee_stays_blocked_until_room_advances() {
         let mut state = GameState::new();
         state.flee().unwrap();
 
-        // giocare una carta (equip/attack) NON sblocca la fuga
+        // giocare una carta (equip) NON sblocca la fuga
         state.current_room[0] = Some(Card::new(Suit::Diamonds, 5));
         state.equip(Card::new(Suit::Diamonds, 5)).unwrap();
         assert!(
@@ -333,26 +468,37 @@ mod tests {
             "non si può fuggire due stanze di fila, anche dopo aver giocato una carta"
         );
 
-        // completare la stanza (new turn) sblocca la fuga
-        state.current_room = [Some(Card::new(Suit::Spades, 3)), None, None, None];
-        state.new_turn().unwrap();
+        // uccidere l'ultimo mostro fa avanzare la stanza e sblocca la fuga
+        state.current_room = room_with(&[Some(monster(3)), Some(monster(4)), None, None]);
+        state.attack(monster(3), true).unwrap();
+        state.attack(monster(4), true).unwrap(); // ultimo mostro -> completamento
         assert!(state.flee().is_ok());
     }
 
     #[test]
-    fn new_turn_requires_single_card_left() {
+    fn room_without_monsters_advances_after_usable_cards_gone() {
         let mut state = GameState::new();
-        assert!(state.new_turn().is_err()); // stanza piena
-
-        state.current_room = [Some(Card::new(Suit::Spades, 3)), None, None, None];
+        // stanza senza mostri: 1 arma + 3 pozioni
+        state.current_room = room_with(&[
+            Some(Card::new(Suit::Diamonds, 4)),
+            Some(Card::new(Suit::Hearts, 6)),
+            Some(Card::new(Suit::Hearts, 8)),
+            Some(Card::new(Suit::Hearts, 10)),
+        ]);
         let deck_before = state.dungeon_deck.len();
-        state.new_turn().unwrap();
+
+        // bevi la pozione: c'è ancora l'arma da equipaggiare -> nessun avanzamento
+        state.equip(Card::new(Suit::Hearts, 6)).unwrap();
+        assert_eq!(state.turn, 1);
+
+        // equipaggi l'arma: restano solo pozioni non più bevibili -> avanzamento
+        state.equip(Card::new(Suit::Diamonds, 4)).unwrap();
+        assert_eq!(state.turn, 2);
         assert_eq!(
             state.current_room.iter().filter(|c| c.is_some()).count(),
             4
         );
-        assert_eq!(state.dungeon_deck.len(), deck_before - 3);
-        assert_eq!(state.turn, 2);
+        assert_eq!(state.dungeon_deck.len(), deck_before - 4);
     }
 
     #[test]

@@ -84,6 +84,7 @@ fn Board() -> impl IntoView {
     let state = RwSignal::new(GameState::new());
     let selected = RwSignal::new(None::<Card>);
     let notice = RwSignal::new(String::new());
+    let barehanded = RwSignal::new(false);
 
     let game_over = move || state.get().is_dead() || state.get().has_won();
     let hp_pct = Signal::derive(move || {
@@ -97,11 +98,14 @@ fn Board() -> impl IntoView {
 
     let on_attack = move |_| {
         match selected.get_untracked() {
-            Some(card) => match state.try_update(|s| s.attack(card)) {
-                Some(Ok(())) => notice.set(String::new()),
-                Some(Err(e)) => notice.set(e),
-                None => notice.set("Game over".to_string()),
-            },
+            Some(card) => {
+                let bh = barehanded.get_untracked();
+                match state.try_update(|s| s.attack(card, bh)) {
+                    Some(Ok(())) => notice.set(String::new()),
+                    Some(Err(e)) => notice.set(e),
+                    None => notice.set("Game over".to_string()),
+                }
+            }
             None => notice.set("Select a monster card first".to_string()),
         }
         selected.set(None);
@@ -128,19 +132,11 @@ fn Board() -> impl IntoView {
         selected.set(None);
     };
 
-    let on_new_turn = move |_| {
-        match state.try_update(|s| s.new_turn()) {
-            Some(Ok(())) => notice.set(String::new()),
-            Some(Err(e)) => notice.set(e),
-            None => notice.set("Game over".to_string()),
-        }
-        selected.set(None);
-    };
-
     let restart = move |_: leptos::ev::MouseEvent| {
         state.set(GameState::new());
         selected.set(None);
         notice.set(String::new());
+        barehanded.set(false);
     };
 
     view! {
@@ -263,7 +259,17 @@ fn Board() -> impl IntoView {
                             .into_any(),
                         }}
                         <span class="mt-1 w-28 text-center font-display text-[0.62rem] leading-relaxed tracking-[0.16em] text-parchment-300 uppercase">
-                            {move || if state.get().weapon.is_some() { "Equipped weapon" } else { "No weapon" }}
+                            {move || {
+                                match state.get().weapon {
+                                    Some(w) => {
+                                        match w.last_monster_value {
+                                            Some(v) => format!("Equipped • bound to {v}"),
+                                            None => "Equipped weapon".to_string(),
+                                        }
+                                    }
+                                    None => "No weapon".to_string(),
+                                }
+                            }}
                         </span>
                     </div>
                 </div>
@@ -283,12 +289,17 @@ fn Board() -> impl IntoView {
                 }}
 
                 {/* — Actions — */}
-                <div class="mt-8 flex flex-wrap justify-center gap-4">
-                    <button class="btn btn-gold" type="button" disabled=game_over on:click=on_new_turn>
-                        "New turn"
-                    </button>
-                    <button class="btn btn-wine" type="button" disabled=game_over on:click=on_attack>
+                <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+                    <button class="btn btn-gold" type="button" disabled=game_over on:click=on_attack>
                         "Attack"
+                    </button>
+                    <button
+                        class=move || if barehanded.get() { "btn btn-gold" } else { "btn btn-outline" }
+                        type="button"
+                        disabled=game_over
+                        on:click=move |_| barehanded.update(|b| *b = !*b)
+                    >
+                        {move || if barehanded.get() { "Barehanded: ON" } else { "Barehanded: OFF" }}
                     </button>
                     <button class="btn btn-outline" type="button" disabled=game_over on:click=on_flee>
                         "Flee"
@@ -297,6 +308,9 @@ fn Board() -> impl IntoView {
                         "Equip"
                     </button>
                 </div>
+                <p class="mt-3 text-center text-[0.7rem] text-parchment-500">
+                    "Barehanded: fight the selected monster with your fists — full damage, weapon stays equipped."
+                </p>
             </OrnateFrame>
         </section>
     }
@@ -316,7 +330,7 @@ fn Rules() -> impl IntoView {
                 <RuleCard
                     icon="2"
                     title="Fight"
-                    text="Black cards are monsters to fight. Diamonds are weapons to equip, hearts are potions to drink. A weapon reduces the damage you take."
+                    text="Black cards are monsters to fight. Diamonds are weapons to equip, hearts are potions to drink. A weapon reduces the damage you take, but once it kills a monster it binds to it: it can only fight monsters of equal or lower strength. Toggle Barehanded to fight any monster with your fists at full damage."
                 />
                 <RuleCard
                     icon="3"
