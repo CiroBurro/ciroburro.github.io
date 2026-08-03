@@ -112,9 +112,12 @@ impl GameState {
         // Se non restano mostri né carte utilizzabili (armi, o pozioni se
         // non ne hai già bevuta una), la stanza è esaurita: avanzamento
         // automatico. Questo copre anche le stanze senza mostri.
-        if !self.has_monsters() && !self.has_usable_cards() {
-            self.maybe_advance();
-        }
+        //if !self.has_monsters() && !self.has_usable_cards() {
+        //    self.maybe_advance();
+        //}
+        self.maybe_advance();
+        self.have_healed = true;
+
 
         Ok(())
     }
@@ -198,6 +201,8 @@ impl GameState {
 
         self.remove_card(card);
         self.maybe_advance();
+        self.have_healed = false;
+
         Ok(())
     }
 
@@ -232,7 +237,6 @@ impl GameState {
 
         self.turn += 1;
         self.last_action_was_avoid = false;
-        self.have_healed = false;
     }
 
     /// Pesa una stanza completa di 4 carte.
