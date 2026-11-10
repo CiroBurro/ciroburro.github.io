@@ -66,6 +66,15 @@ struct ProjectData {
 
 const PROJECTS: &[ProjectData] = &[
     ProjectData {
+        title: "assaultcube-cheat",
+        tag: "Security",
+        description: "PoC cheat for AssaultCube featuring God Mode and ESP, toggled via an overlay menu. Includes IDA Pro database and cheat table — built as a first dive into game hacking and reverse engineering.",
+        chips: &["C++", "Reverse Engineering", "Game Hacking"],
+        cta_label: "View on GitHub",
+        cta_href: "https://github.com/CiroBurro/assaultcube-cheat",
+        external: true,
+    },
+    ProjectData {
         title: "Scoundrel Web",
         tag: "Featured",
         description: "The dungeon-crawling solitaire in web form: deck, armory and room in a single adventure. Reimplemented in Rust with Leptos.",
@@ -200,6 +209,7 @@ fn ProjectCard(
 fn Skills() -> impl IntoView {
     let languages = vec!["Rust", "C", "Java", "Python", "Bash", "Go"];
     let ops = vec!["Linux", "Docker", "Networking", "Nix"];
+    let security = vec!["Reverse Engineering", "Software Security"];
 
     view! {
         <section class="py-10">
@@ -207,6 +217,7 @@ fn Skills() -> impl IntoView {
             <div class="mt-8 grid gap-6 md:grid-cols-3">
                 <SkillBox title="Languages" items=languages />
                 <SkillBox title="Operations" items=ops />
+                <SkillBox title="Security" items=security />
             </div>
         </section>
     }
