@@ -1,7 +1,9 @@
+pub mod blog;
 pub mod portfolio;
 pub mod scoundrel;
 pub mod theme;
 
+use blog::{BlogPage, PostPage};
 use leptos::prelude::*;
 use leptos_router::{components::*, path};
 use portfolio::PortfolioPage;
@@ -23,6 +25,8 @@ fn App() -> impl IntoView {
                     <Routes fallback=|| view! { <NotFound /> }>
                         <Route path=path!("") view=PortfolioPage />
                         <Route path=path!("/scoundrel") view=ScoundrelPage />
+                        <Route path=path!("/blog") view=BlogPage />
+                        <Route path=path!("/blog/:slug") view=PostPage />
                     </Routes>
                 </main>
                 <Footer />
@@ -54,6 +58,12 @@ fn Nav() -> impl IntoView {
                         attr:class="font-display uppercase tracking-[0.18em] text-parchment-200 hover:text-gold-300 transition-colors"
                     >
                         "Scoundrel"
+                    </A>
+                    <A
+                        href="/blog"
+                        attr:class="font-display uppercase tracking-[0.18em] text-parchment-200 hover:text-gold-300 transition-colors"
+                    >
+                        "Blog"
                     </A>
                 </div>
             </nav>

@@ -7,6 +7,7 @@ edition = "2024"
 leptos = { version = "0.8.20", features = ["csr"] }
 leptos_router = "0.8.15"
 rand = "0.10.2"
+pulldown-cmark = "0.12"
 
 # getrandom serve a rand per l'entropia; su wasm32-unknown-unknown serve
 # il backend JS esplicito, altrimenti la build fallisce.
