@@ -3,29 +3,10 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use pulldown_cmark::{html, Options, Parser};
 
-use crate::theme::{DividerOrnate, OrnateFrame};
+use crate::theme::DividerOrnate;
 
-// ── Post registry ────────────────────────────────────────────────────────────
-// Add a new post: drop a .md file in /posts/, add an entry here.
-// Fields: (slug, title, date, description, raw_markdown)
-
-struct PostMeta {
-    slug: &'static str,
-    title: &'static str,
-    date: &'static str,
-    description: &'static str,
-    body: &'static str,
-}
-
-const POSTS: &[PostMeta] = &[
-    PostMeta {
-        slug: "hello-dungeon",
-        title: "Hello, Dungeon",
-        date: "2026-11-10",
-        description: "First entry in the tavern logbook — what this blog is about.",
-        body: include_str!("../posts/hello-dungeon.md"),
-    },
-];
+// AUTO-GENERATED: PostMeta struct + POSTS const from build.rs
+include!(concat!(env!("OUT_DIR"), "/posts_generated.rs"));
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -82,14 +63,14 @@ fn PostListItem(
     let href = format!("/blog/{slug}");
     view! {
         <li>
-            <OrnateFrame>
+            <div class="plain-frame p-6">
                 <div class="flex flex-col gap-2">
                     <span class="font-display text-xs tracking-[0.2em] uppercase text-parchment-500">{date}</span>
                     <h2 class="font-display text-xl tracking-[0.12em] text-gold-200 uppercase">{title}</h2>
                     <p class="text-parchment-200 leading-relaxed">{description}</p>
                     <A href=href attr:class="btn btn-outline mt-2 self-start">"Read →"</A>
                 </div>
-            </OrnateFrame>
+            </div>
         </li>
     }
 }
