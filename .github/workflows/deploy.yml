@@ -36,6 +36,9 @@ jobs:
       - name: Build (release, user pages)
         run: trunk build --release --public-url /
 
+      - name: Include custom domain
+        run: cp CNAME dist/CNAME
+
       # SPA fallback: GitHub Pages serve 404.html per le route profonde,
       # la SPA si monta e il router history mostra la pagina giusta.
       - name: Prepare SPA fallback
